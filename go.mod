@@ -1,3 +1,3 @@
-module github.com/pandaAritra/SqLiteWireProtocol
+module TCP
 
 go 1.25.7
