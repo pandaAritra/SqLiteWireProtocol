@@ -14,5 +14,5 @@ func Query(db *sql.DB, qString string) (*sql.Rows, error) {
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
-	return db.Query("")
+	return db.Query(qString)
 }

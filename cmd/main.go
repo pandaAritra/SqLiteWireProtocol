@@ -1,11 +1,12 @@
 package main
 
 import (
-	handlers "TCP/Handlers"
 	"fmt"
 	"log"
 	"net"
 	"os"
+
+	handlers "github.com/pandaAritra/sqliteWireProtocol/Handlers"
 )
 
 func main() {

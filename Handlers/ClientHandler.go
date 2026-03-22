@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
+
+	db "github.com/pandaAritra/sqliteWireProtocol/db"
 )
 
 func EchoClient(client net.Conn) {
@@ -82,6 +85,34 @@ func LengthPayload(client net.Conn) {
 			return
 		}
 		fmt.Println(string(buf))
-	}
 
+		database, err := db.Open("../db/test.db")
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		rows, err := db.Query(database, string(buf))
+
+		// get column names first
+		cols, _ := rows.Columns()
+		fmt.Println(cols)
+
+		// make a slice of any, one per column
+		dest := make([]any, len(cols))
+
+		// make a slice of pointers into dest
+		ptrs := make([]any, len(cols))
+		for i := range dest {
+			ptrs[i] = &dest[i]
+		}
+
+		// now scan into the pointers
+		for rows.Next() {
+			fmt.Println("----------------------------------------------")
+			rows.Scan(ptrs...)
+			fmt.Println(dest)
+		}
+
+	}
 }
