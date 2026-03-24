@@ -1,5 +1,7 @@
 package utils
 
-// func MakePKT(qstring string) *[]byte {
+func MakePKT(qstring string) *[]byte {
 
-// }
+	
+
+}

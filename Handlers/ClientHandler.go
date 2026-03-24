@@ -111,7 +111,7 @@ func LengthPayload(client net.Conn) {
 		for rows.Next() {
 			fmt.Println("----------------------------------------------")
 			rows.Scan(ptrs...)
-			fmt.Println(dest)
+			fmt.Printf("%T\n", dest)
 		}
 
 	}
