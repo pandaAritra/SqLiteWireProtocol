@@ -5,10 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 
-	db "github.com/pandaAritra/sqliteWireProtocol/db"
+	mydb "github.com/pandaAritra/sqliteWireProtocol/db"
 )
 
 func EchoClient(client net.Conn) {
@@ -32,6 +31,7 @@ func HandelDelimeter(client net.Conn) {
 				return i + 1, data[:i], nil
 			}
 		}
+
 		if atEOF {
 			if len(data) > 0 {
 				fmt.Println("incomplete data in buffer:", string(data))
@@ -81,22 +81,34 @@ func LengthPayload(client net.Conn) {
 		buf = make([]byte, payloadLength)
 		_, err = io.ReadFull(client, buf)
 		if err != nil {
-			fmt.Println("invalid wuarry ---------\n", err)
+			fmt.Println("invalid quarry ---------\n", err)
 			return
 		}
 		fmt.Println(string(buf))
 
-		database, err := db.Open("../db/test.db")
-
+		// Use the absolute path that works for you
+		database, err := mydb.Open("/home/panda/Documents/code/test/SqLiteWireProtocol/db/test.db") // UPDATE THIS PATH
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("database error:", err)
+			continue
 		}
 
-		rows, err := db.Query(database, string(buf))
+		rows, err := mydb.Query(database, string(buf))
+		if err != nil {
+			fmt.Println("query error:", err)
+			database.Close()
+			continue
+		}
+
+		if rows == nil {
+			fmt.Println("rows is nil")
+			database.Close()
+			continue
+		}
 
 		// get column names first
 		cols, _ := rows.Columns()
-		fmt.Println(cols)
+		fmt.Println("Columns:", cols)
 
 		// make a slice of any, one per column
 		dest := make([]any, len(cols))
@@ -107,12 +119,27 @@ func LengthPayload(client net.Conn) {
 			ptrs[i] = &dest[i]
 		}
 
-		// now scan into the pointers
+		// scan into the pointers and print results
+		rowCount := 0
 		for rows.Next() {
 			fmt.Println("----------------------------------------------")
 			rows.Scan(ptrs...)
-			fmt.Printf("%T\n", dest)
+
+			// Print column names and values
+			for i, col := range cols {
+				fmt.Printf("%s: %v | ", col, dest[i])
+			}
+			fmt.Println()
+			rowCount++
 		}
 
+		if rowCount == 0 {
+			fmt.Println("No rows returned from query")
+		} else {
+			fmt.Printf("✓ Query returned %d row(s)\n", rowCount)
+		}
+
+		rows.Close()
+		database.Close()
 	}
 }
