@@ -14,10 +14,11 @@ The protocol uses a simple binary framing format:
 
 | Byte   | Type    | Description              |
 |--------|---------|--------------------------|
-| `0x01` | Auth    | Authentication handshake |
 | `0x02` | Query   | SQL query string         |
 
-### Response Format
+### Response Format (WIP)
+
+Currently returns results directly to stdout. Planned response format:
 
 ```
 [0x01] header packet  — column names
@@ -28,56 +29,150 @@ The protocol uses a simple binary framing format:
 ## Project Structure
 
 ```
-tcp/
-├── server/       — standalone server binary
-│   ├── main.go
-│   ├── handler/  — protocol parsing, response encoding
-│   └── db/       — SQLite integration
-└── driver/       — client driver (importable package)
-    └── driver.go
+SqLiteWireProtocol/
+├── cmd/
+│   └── main.go              — Server entry point, accepts CLI port arg
+├── Handlers/
+│   └── ClientHandler.go     — Protocol parsing, query execution, result handling
+├── db/
+│   ├── db.go                — SQLite wrapper (mydb package)
+│   └── test.db              — SQLite database file
+├── Utils/
+│   ├── bindPort.go          — TCP listener setup
+│   ├── getport.go           — CLI port parsing
+│   └── makepackage.go       — Package utilities
+├── models/
+├── go.mod
+└── README.md
 ```
 
 ## Starting the Server
 
 ```bash
-cd server
-go run . <port>
+cd SqLiteWireProtocol
+go run ./cmd <port>
 ```
 
 Example:
+
 ```bash
-go run . 8000
+go run ./cmd 8000
 ```
 
-Server listens on `:<port>` and accepts TCP connections.
+Server listens on `[::]:<port>` (IPv6 + IPv4) and accepts concurrent TCP connections.
 
-## Using the Driver
+## Protocol Usage
+
+Send binary-framed SQL queries:
+
+```
+[0x02] [0x00 0x00 0x00 0x29] [SELECT * FROM users where name = "Aritra"]
+ ^type          ^length (41 bytes)         ^payload (SQL query)
+```
+
+Results are printed to server stdout. Client receives acknowledgment when complete.
+
+## Testing
+
+### Using netcat (informational only)
+
+```bash
+nc localhost 8000
+```
+
+Note: Binary protocol messages need proper encoding — netcat won't work for actual queries.
+
+### Using Go client
 
 ```go
-import "github.com/pandaAritra/tcp/driver"
+import "net"
 
-client := driver.NewQrer()
-err := client.Connect("localhost:8000")
-if err != nil {
-    log.Fatal(err)
-}
+conn, _ := net.Dial("tcp", "localhost:8000")
+defer conn.Close()
 
-client.QueryString("SELECT * FROM users")
+// Send message type (0x02 for query)
+conn.Write([]byte{0x02})
+
+// Send payload length as big-endian uint32
+payloadLength := uint32(len(query))
+binary.Write(conn, binary.BigEndian, payloadLength)
+
+// Send query
+conn.Write([]byte(query))
 ```
 
-## Testing with netcat
+## Setup & Requirements
+
+### Database File
+
+1. **Create a fresh database:**
+   ```bash
+   python3 create_db.py
+   ```
+   This generates `db/test.db` with sample `users` table.
+
+2. **Update absolute path in code:**
+   In `Handlers/ClientHandler.go`, update the database path:
+   ```go
+   database, err := mydb.Open("/absolute/path/to/db/test.db")
+   ```
+   (Relative paths are fragile depending on where you run the server from.)
+
+### Dependencies
 
 ```bash
-nc <server-ip> 8000
+go get github.com/mattn/go-sqlite3  # If using CGo SQLite driver
 ```
 
-Note: binary protocol messages can't be sent manually via netcat — use the driver package or write a Go client.
+Or if using `modernc.org/sqlite` (pure Go):
+
+```bash
+go get modernc.org/sqlite
+```
+
+## Known Issues & Lessons
+
+- **Relative paths break easily** — Always use absolute paths for database files
+- **Database must be opened once** — Currently opens on every query (inefficient). Should open once in `main()` and pass to handlers
+- **Response encoding incomplete** — Currently prints results to stdout, not binary-encoded responses
+- **No error responses** — Errors logged to stdout only, client receives no feedback
 
 ## Status
 
 - [x] TCP server with concurrent client handling
-- [x] Binary length-prefixed protocol
-- [x] Client driver package
-- [ ] SQLite query execution
+- [x] Binary length-prefixed protocol parsing
+- [x] SQLite query execution
+- [x] Result scanning and display
+- [ ] Binary response encoding (0x01/0x02/0x03)
 - [ ] Auth handshake
-- [ ] Response encoding
+- [ ] Client driver package
+- [ ] Connection pooling
+- [ ] Prepared statements
+
+## Next Steps
+
+1. **Refactor database management** — Open once at startup, pass to handlers
+2. **Implement response encoding** — Send results back to client, not stdout
+3. **Add error handling** — Send error messages to client
+4. **Build client driver** — Go package to simplify client code
+5. **Add prepared statements** — For better performance and security
+
+## Running Example
+
+```bash
+# Terminal 1: Start server
+go run ./cmd 8000
+# Output: listening on [::]:8000
+
+# Terminal 2: Send query (using Go test client or similar)
+# Send: [0x02][length][SELECT * FROM users]
+
+# Terminal 1 shows:
+# client is 127.0.0.1:12345
+# msg type 2
+# payload length: 41
+# SELECT * FROM users where name = "Aritra"
+# Columns: [id name email age]
+# id: 1 | name: Aritra | email: aritra@example.com | age: 24 |
+# ✓ Query returned 1 row(s)
+```
