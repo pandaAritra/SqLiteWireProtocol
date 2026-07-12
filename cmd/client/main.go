@@ -2,13 +2,18 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	utils "github.com/pandaAritra/sqliteWireProtocol/Utils"
+	"github.com/pandaAritra/sqliteWireProtocol/models"
 )
 
 func main() {
@@ -81,5 +86,84 @@ func sendQuery(conn net.Conn, query string) {
 		fmt.Printf("Error: failed to send query to server: %v\n", err)
 		return
 	}
-	fmt.Printf("Query sent successfully: %s\n", query)
+
+	readResponse(conn)
+}
+
+func readResponse(conn net.Conn) {
+	// 1. Read message type
+	msgTypeBuf := make([]byte, 1)
+	_, err := io.ReadFull(conn, msgTypeBuf)
+	if err != nil {
+		fmt.Printf("Error: failed to read response message type: %v\n", err)
+		return
+	}
+	msgType := msgTypeBuf[0]
+
+	// 2. Read payload length
+	lenBuf := make([]byte, 4)
+	_, err = io.ReadFull(conn, lenBuf)
+	if err != nil {
+		fmt.Printf("Error: failed to read response payload length: %v\n", err)
+		return
+	}
+	payloadLength := binary.BigEndian.Uint32(lenBuf)
+
+	// 3. Read payload
+	payloadBuf := make([]byte, payloadLength)
+	_, err = io.ReadFull(conn, payloadBuf)
+	if err != nil {
+		fmt.Printf("Error: failed to read response payload: %v\n", err)
+		return
+	}
+
+	// 4. Handle response based on msgType
+	if msgType != 0x03 {
+		fmt.Printf("Error: unexpected response message type 0x%02x: %s\n", msgType, string(payloadBuf))
+		return
+	}
+
+	var response models.Response
+	if err := json.Unmarshal(payloadBuf, &response); err != nil {
+		fmt.Printf("Error: failed to decode response JSON: %v\n", err)
+		return
+	}
+
+	if response.Error != "" {
+		fmt.Printf("Error: %s\n", response.Error)
+		return
+	}
+
+	if len(response.Columns) == 0 {
+		fmt.Println("Query executed successfully (no rows returned).")
+		return
+	}
+
+	// Print as table
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 4, ' ', 0)
+	
+	// Headers
+	fmt.Fprintln(w, strings.Join(response.Columns, "\t"))
+	
+	// Separators
+	seps := make([]string, len(response.Columns))
+	for i, col := range response.Columns {
+		seps[i] = strings.Repeat("-", len(col))
+	}
+	fmt.Fprintln(w, strings.Join(seps, "\t"))
+
+	// Rows
+	for _, row := range response.Rows {
+		rowStr := make([]string, len(row))
+		for i, val := range row {
+			if val == nil {
+				rowStr[i] = "NULL"
+			} else {
+				rowStr[i] = fmt.Sprintf("%v", val)
+			}
+		}
+		fmt.Fprintln(w, strings.Join(rowStr, "\t"))
+	}
+	w.Flush()
+	fmt.Println()
 }

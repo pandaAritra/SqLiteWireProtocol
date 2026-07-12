@@ -2,8 +2,8 @@ package models
 
 // Request
 type Request struct {
-	Query string        `json:"query"`
-	Args  []interface{} `json:"args"`
+	Query string `json:"query"`
+	Args  []any  `json:"args"`
 }
 
 // Response

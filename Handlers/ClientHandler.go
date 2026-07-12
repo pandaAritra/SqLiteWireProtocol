@@ -8,7 +8,11 @@ import (
 	"net"
 	"os"
 
+	"unicode/utf8"
+
 	mydb "github.com/pandaAritra/sqliteWireProtocol/db"
+	"github.com/pandaAritra/sqliteWireProtocol/models"
+
 )
 
 // getDatabasePath resolves the SQLite database path by checking:
@@ -115,18 +119,21 @@ func LengthPayload(client net.Conn) {
 		database, err := mydb.Open(dbPath)
 		if err != nil {
 			fmt.Println("database error:", err)
+			SendResponse(client, &models.Response{Error: fmt.Sprintf("database error: %v", err)})
 			continue
 		}
 
 		rows, err := mydb.Query(database, string(buf))
 		if err != nil {
 			fmt.Println("query error:", err)
+			SendResponse(client, &models.Response{Error: fmt.Sprintf("query error: %v", err)})
 			database.Close()
 			continue
 		}
 
 		if rows == nil {
 			fmt.Println("rows is nil")
+			SendResponse(client, &models.Response{Error: "query returned no result set"})
 			database.Close()
 			continue
 		}
@@ -146,15 +153,34 @@ func LengthPayload(client net.Conn) {
 
 		// scan into the pointers and print results
 		rowCount := 0
+		var allRows [][]any
 		for rows.Next() {
 			fmt.Println("----------------------------------------------")
-			rows.Scan(ptrs...)
+			if err := rows.Scan(ptrs...); err != nil {
+				fmt.Println("scan error:", err)
+				break
+			}
 
 			// Print column names and values
 			for i, col := range cols {
 				fmt.Printf("%s: %v | ", col, dest[i])
 			}
 			fmt.Println()
+
+			// We need to copy dest slice elements, because scanning overwrites them
+			rowVals := make([]any, len(cols))
+			for i, val := range dest {
+				if b, ok := val.([]byte); ok {
+					if utf8.Valid(b) {
+						rowVals[i] = string(b)
+					} else {
+						rowVals[i] = b
+					}
+				} else {
+					rowVals[i] = val
+				}
+			}
+			allRows = append(allRows, rowVals)
 			rowCount++
 		}
 
@@ -162,6 +188,14 @@ func LengthPayload(client net.Conn) {
 			fmt.Println("No rows returned from query")
 		} else {
 			fmt.Printf("✓ Query returned %d row(s)\n", rowCount)
+		}
+
+		resp := &models.Response{
+			Columns: cols,
+			Rows:    allRows,
+		}
+		if err := SendResponse(client, resp); err != nil {
+			fmt.Println("failed to send response:", err)
 		}
 
 		rows.Close()
