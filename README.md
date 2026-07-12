@@ -31,7 +31,9 @@ Currently returns results directly to stdout. Planned response format:
 ```
 SqLiteWireProtocol/
 ├── cmd/
-│   └── main.go              — Server entry point, accepts CLI port arg
+│   ├── main.go              — Server entry point, accepts CLI port arg
+│   └── client/
+│       └── main.go          — Client CLI entry point (REPL & single query)
 ├── Handlers/
 │   └── ClientHandler.go     — Protocol parsing, query execution, result handling
 ├── db/
@@ -40,8 +42,9 @@ SqLiteWireProtocol/
 ├── Utils/
 │   ├── bindPort.go          — TCP listener setup
 │   ├── getport.go           — CLI port parsing
-│   └── makepackage.go       — Package utilities
+│   └── makepacket.go        — Package utilities (packet encoding)
 ├── models/
+│   └── models.go            — JSON-structured request/response models
 ├── go.mod
 └── README.md
 ```
@@ -61,81 +64,51 @@ go run ./cmd 8000
 
 Server listens on `[::]:<port>` (IPv6 + IPv4) and accepts concurrent TCP connections.
 
-## Protocol Usage
+## Running the Client
 
-Send binary-framed SQL queries:
+We have built a dedicated Go client that supports both an **interactive REPL shell** and a **single-query execution** mode:
 
-```
-[0x02] [0x00 0x00 0x00 0x29] [SELECT * FROM users where name = "Aritra"]
- ^type          ^length (41 bytes)         ^payload (SQL query)
-```
-
-Results are printed to server stdout. Client receives acknowledgment when complete.
-
-## Testing
-
-### Using netcat (informational only)
-
+### 1. Interactive REPL Mode
+To open an interactive session and run multiple queries:
 ```bash
-nc localhost 8000
+go run ./cmd/client/main.go <port>
+```
+Example:
+```bash
+go run ./cmd/client/main.go 8000
+```
+This starts an interactive shell where you can type queries directly:
+```
+sqlite-wire> SELECT * FROM users;
 ```
 
-Note: Binary protocol messages need proper encoding — netcat won't work for actual queries.
-
-### Using Go client
-
-```go
-import "net"
-
-conn, _ := net.Dial("tcp", "localhost:8000")
-defer conn.Close()
-
-// Send message type (0x02 for query)
-conn.Write([]byte{0x02})
-
-// Send payload length as big-endian uint32
-payloadLength := uint32(len(query))
-binary.Write(conn, binary.BigEndian, payloadLength)
-
-// Send query
-conn.Write([]byte(query))
+### 2. Single-Query Mode
+To run a query directly and exit:
+```bash
+go run ./cmd/client/main.go <port> "<sql_query>"
+```
+Example:
+```bash
+go run ./cmd/client/main.go 8000 "SELECT * FROM users;"
 ```
 
 ## Setup & Requirements
 
 ### Database File
 
-1. **Create a fresh database:**
-   ```bash
-   python3 create_db.py
-   ```
-   This generates `db/test.db` with sample `users` table.
+The server dynamically resolves the database location in the following order:
+1. Environment variable `SQLITE_DB_PATH`
+2. Local workspace `./db/test.db`
+3. Absolute path `/home/panda/Projects/SqLiteWireProtocol/db/test.db`
+4. Absolute path `/home/panda/Documents/code/test/SqLiteWireProtocol/db/test.db`
 
-2. **Update absolute path in code:**
-   In `Handlers/ClientHandler.go`, update the database path:
-   ```go
-   database, err := mydb.Open("/absolute/path/to/db/test.db")
-   ```
-   (Relative paths are fragile depending on where you run the server from.)
+This ensures that the database is detected and works automatically without needing manual code changes.
 
 ### Dependencies
 
 ```bash
-go get github.com/mattn/go-sqlite3  # If using CGo SQLite driver
-```
-
-Or if using `modernc.org/sqlite` (pure Go):
-
-```bash
 go get modernc.org/sqlite
 ```
-
-## Known Issues & Lessons
-
-- **Relative paths break easily** — Always use absolute paths for database files
-- **Database must be opened once** — Currently opens on every query (inefficient). Should open once in `main()` and pass to handlers
-- **Response encoding incomplete** — Currently prints results to stdout, not binary-encoded responses
-- **No error responses** — Errors logged to stdout only, client receives no feedback
 
 ## Status
 
@@ -143,36 +116,9 @@ go get modernc.org/sqlite
 - [x] Binary length-prefixed protocol parsing
 - [x] SQLite query execution
 - [x] Result scanning and display
+- [x] Interactive REPL / Single-Query Client CLI
+- [x] Dynamic database path resolution
 - [ ] Binary response encoding (0x01/0x02/0x03)
 - [ ] Auth handshake
-- [ ] Client driver package
 - [ ] Connection pooling
 - [ ] Prepared statements
-
-## Next Steps
-
-1. **Refactor database management** — Open once at startup, pass to handlers
-2. **Implement response encoding** — Send results back to client, not stdout
-3. **Add error handling** — Send error messages to client
-4. **Build client driver** — Go package to simplify client code
-5. **Add prepared statements** — For better performance and security
-
-## Running Example
-
-```bash
-# Terminal 1: Start server
-go run ./cmd 8000
-# Output: listening on [::]:8000
-
-# Terminal 2: Send query (using Go test client or similar)
-# Send: [0x02][length][SELECT * FROM users]
-
-# Terminal 1 shows:
-# client is 127.0.0.1:12345
-# msg type 2
-# payload length: 41
-# SELECT * FROM users where name = "Aritra"
-# Columns: [id name email age]
-# id: 1 | name: Aritra | email: aritra@example.com | age: 24 |
-# ✓ Query returned 1 row(s)
-```

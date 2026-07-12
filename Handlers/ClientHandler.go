@@ -6,9 +6,35 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 
 	mydb "github.com/pandaAritra/sqliteWireProtocol/db"
 )
+
+// getDatabasePath resolves the SQLite database path by checking:
+// 1. SQLITE_DB_PATH environment variable
+// 2. Local relative db/test.db
+// 3. Absolute path to current workspace database
+// 4. Absolute path to previous database location
+func getDatabasePath() string {
+	if envPath := os.Getenv("SQLITE_DB_PATH"); envPath != "" {
+		return envPath
+	}
+
+	paths := []string{
+		"db/test.db",
+		"/home/panda/Projects/SqLiteWireProtocol/db/test.db",
+		"/home/panda/Documents/code/test/SqLiteWireProtocol/db/test.db",
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return "db/test.db" // Fallback to relative path
+}
 
 func EchoClient(client net.Conn) {
 	defer client.Close()
@@ -22,7 +48,7 @@ func EchoClient(client net.Conn) {
 	}
 }
 
-func HandelDelimeter(client net.Conn) {
+func HandleDelimiter(client net.Conn) {
 	defer client.Close()
 	scanner := bufio.NewScanner(client)
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -48,13 +74,13 @@ func HandelDelimeter(client net.Conn) {
 
 	if err := scanner.Err(); err != nil {
 		fmt.Println("connection closed with error:", err)
-
 	}
-
 }
 
 func LengthPayload(client net.Conn) {
 	defer client.Close()
+	dbPath := getDatabasePath()
+
 	for {
 		buf := make([]byte, 1)
 		_, err := io.ReadFull(client, buf)
@@ -71,7 +97,7 @@ func LengthPayload(client net.Conn) {
 		buf = make([]byte, 4)
 		_, err = io.ReadFull(client, buf)
 		if err != nil {
-			fmt.Println("payload length reading wasnt successful---------\n", err)
+			fmt.Println("payload length reading wasn't successful---------\n", err)
 			return
 		}
 
@@ -81,13 +107,12 @@ func LengthPayload(client net.Conn) {
 		buf = make([]byte, payloadLength)
 		_, err = io.ReadFull(client, buf)
 		if err != nil {
-			fmt.Println("invalid quarry ---------\n", err)
+			fmt.Println("invalid query ---------\n", err)
 			return
 		}
 		fmt.Println(string(buf))
 
-		// Use the absolute path that works for you
-		database, err := mydb.Open("/home/panda/Documents/code/test/SqLiteWireProtocol/db/test.db") // UPDATE THIS PATH
+		database, err := mydb.Open(dbPath)
 		if err != nil {
 			fmt.Println("database error:", err)
 			continue

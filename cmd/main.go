@@ -9,10 +9,9 @@ import (
 )
 
 func main() {
-
 	port := utils.GetPort()
 	listener := utils.BindPort(port)
-	log.Println("listning on", listener.Addr())
+	log.Println("listening on", listener.Addr())
 
 	for {
 		client, err := listener.Accept()
@@ -20,9 +19,8 @@ func main() {
 			fmt.Println("waiting")
 			continue
 		}
-		fmt.Println("client is ", client.RemoteAddr()) // now there is a client object that has propaties
+		fmt.Println("client is", client.RemoteAddr()) // now there is a client object that has properties
 
-		go handlers.LengthPayload(client) //makes eatch client seperate
+		go handlers.LengthPayload(client) // makes each client separate
 	}
-
 }
