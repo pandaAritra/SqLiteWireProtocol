@@ -6,39 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 
 	"unicode/utf8"
 
+	utils "github.com/pandaAritra/sqliteWireProtocol/Utils"
 	mydb "github.com/pandaAritra/sqliteWireProtocol/db"
 	"github.com/pandaAritra/sqliteWireProtocol/models"
-
 )
-
-// getDatabasePath resolves the SQLite database path by checking:
-// 1. SQLITE_DB_PATH environment variable
-// 2. Local relative db/test.db
-// 3. Absolute path to current workspace database
-// 4. Absolute path to previous database location
-func getDatabasePath() string {
-	if envPath := os.Getenv("SQLITE_DB_PATH"); envPath != "" {
-		return envPath
-	}
-
-	paths := []string{
-		"db/test.db",
-		"/home/panda/Projects/SqLiteWireProtocol/db/test.db",
-		"/home/panda/Documents/code/test/SqLiteWireProtocol/db/test.db",
-	}
-
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-
-	return "db/test.db" // Fallback to relative path
-}
 
 func EchoClient(client net.Conn) {
 	defer client.Close()
@@ -83,7 +57,7 @@ func HandleDelimiter(client net.Conn) {
 
 func LengthPayload(client net.Conn) {
 	defer client.Close()
-	dbPath := getDatabasePath()
+	dbPath := utils.GetDatabasePath()
 
 	for {
 		buf := make([]byte, 1)
